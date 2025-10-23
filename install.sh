@@ -12,6 +12,121 @@ SCRIPT_PATH="/usr/local/bin/$SCRIPT_NAME"
 SERVICE_PATH="/etc/systemd/system/$SERVICE_NAME"
 ENV_PATH="/etc/nas-mount-startup.env"
 
+# Function to expand ~ to actual home directory
+expand_home() {
+    local path="$1"
+    if [[ "$path" == "~/"* ]]; then
+        echo "$HOME/${path#~/}"
+    else
+        echo "$path"
+    fi
+}
+
+# Function to generate compose.yml file
+generate_compose_file() {
+    local compose_dir="$1"
+    local compose_file="$compose_dir/compose.yml"
+
+    # Load environment variables to get configuration
+    if [ -f "$ENV_PATH" ]; then
+        source "$ENV_PATH"
+    fi
+
+    # Set defaults for Jellyfin configuration
+    local jellyfin_image="${JELLYFIN_IMAGE:-jellyfin/jellyfin}"
+    local jellyfin_container="${JELLYFIN_CONTAINER_NAME:-jellyfin}"
+    local jellyfin_config=$(expand_home "${JELLYFIN_CONFIG_DIR:-~/jellyfin_config}")
+    local jellyfin_cache=$(expand_home "${JELLYFIN_CACHE_DIR:-~/jellyfin_cache}")
+    local jellyfin_port="${JELLYFIN_PORT:-8096}"
+    local jellyfin_media="${JELLYFIN_MEDIA_DIR:-${MOUNT_POINT:-/mnt/synology_nas/media}}"
+
+    echo "Generating compose.yml at $compose_file..."
+
+    # Create the compose directory if it doesn't exist
+    mkdir -p "$compose_dir"
+
+    # Generate the compose.yml file
+    cat > "$compose_file" <<EOF
+services:
+  jellyfin:
+    image: $jellyfin_image
+    container_name: $jellyfin_container
+    network_mode: 'host' # Port $jellyfin_port
+    volumes:
+      - $jellyfin_config:/config
+      - $jellyfin_cache:/cache
+      - type: bind
+        source: $jellyfin_media
+        target: /media
+EOF
+
+    echo "  ✓ Generated compose.yml with Jellyfin configuration"
+    echo "    Image: $jellyfin_image"
+    echo "    Container: $jellyfin_container"
+    echo "    Config: $jellyfin_config"
+    echo "    Cache: $jellyfin_cache"
+    echo "    Media: $jellyfin_media"
+    echo "    Port: $jellyfin_port"
+}
+
+# Function to create Jellyfin directories
+create_jellyfin_directories() {
+    if [ -f "$ENV_PATH" ]; then
+        source "$ENV_PATH"
+    fi
+
+    local jellyfin_config=$(expand_home "${JELLYFIN_CONFIG_DIR:-~/jellyfin_config}")
+    local jellyfin_cache=$(expand_home "${JELLYFIN_CACHE_DIR:-~/jellyfin_cache}")
+
+    echo "Creating Jellyfin directories..."
+
+    # Create config directory
+    if [ ! -d "$jellyfin_config" ]; then
+        mkdir -p "$jellyfin_config"
+        # Set ownership to the user who ran sudo (if applicable)
+        if [ -n "$SUDO_USER" ]; then
+            chown -R "$SUDO_USER:$SUDO_USER" "$jellyfin_config"
+        fi
+        echo "  ✓ Created config directory: $jellyfin_config"
+    else
+        echo "  ℹ Config directory already exists: $jellyfin_config"
+    fi
+
+    # Create cache directory
+    if [ ! -d "$jellyfin_cache" ]; then
+        mkdir -p "$jellyfin_cache"
+        # Set ownership to the user who ran sudo (if applicable)
+        if [ -n "$SUDO_USER" ]; then
+            chown -R "$SUDO_USER:$SUDO_USER" "$jellyfin_cache"
+        fi
+        echo "  ✓ Created cache directory: $jellyfin_cache"
+    else
+        echo "  ℹ Cache directory already exists: $jellyfin_cache"
+    fi
+}
+
+# Handle special flags
+if [ "$1" = "--generate-compose" ]; then
+    if [ "$EUID" -ne 0 ]; then
+        echo "ERROR: This script must be run as root (use sudo)"
+        exit 1
+    fi
+    if [ -f "$ENV_PATH" ]; then
+        source "$ENV_PATH"
+        if [ -n "$DOCKER_COMPOSE_DIR" ] && [ "$DOCKER_COMPOSE_DIR" != "/path/to/your/docker/compose" ]; then
+            generate_compose_file "$DOCKER_COMPOSE_DIR"
+            echo "compose.yml generated successfully!"
+            exit 0
+        else
+            echo "ERROR: DOCKER_COMPOSE_DIR not configured in $ENV_PATH"
+            exit 1
+        fi
+    else
+        echo "ERROR: Environment file not found at $ENV_PATH"
+        exit 1
+    fi
+fi
+
 echo "Installing NAS Mount and Docker Startup Service..."
 
 # Check if running as root
@@ -44,6 +159,22 @@ echo "Setting up log file..."
 touch /var/log/nas-mount-startup.log
 chmod 644 /var/log/nas-mount-startup.log
 
+# Create Jellyfin directories
+create_jellyfin_directories
+
+# Generate compose.yml if DOCKER_COMPOSE_DIR is set in env file
+if [ -f "$ENV_PATH" ]; then
+    source "$ENV_PATH"
+    if [ -n "$DOCKER_COMPOSE_DIR" ] && [ "$DOCKER_COMPOSE_DIR" != "/path/to/your/docker/compose" ]; then
+        generate_compose_file "$DOCKER_COMPOSE_DIR"
+    else
+        echo ""
+        echo "⚠ DOCKER_COMPOSE_DIR not configured yet - compose.yml will be generated after configuration"
+        echo "  After editing $ENV_PATH, run this to generate compose.yml:"
+        echo "  sudo bash -c 'source $ENV_PATH && $(readlink -f "$0") --generate-compose-only'"
+    fi
+fi
+
 # Reload systemd and enable the service
 echo "Configuring systemd service..."
 systemctl daemon-reload
@@ -66,8 +197,16 @@ echo ""
 echo "   Optional settings (uncomment and modify if needed):"
 echo "   - NAS_IP, NAS_USERNAME, NAS_SHARE"
 echo "   - EXPECTED_FOLDERS, MOUNT_POINT, LOG_FILE"
+echo "   - JELLYFIN_IMAGE, JELLYFIN_CONTAINER_NAME, JELLYFIN_CONFIG_DIR"
+echo "   - JELLYFIN_CACHE_DIR, JELLYFIN_PORT, JELLYFIN_MEDIA_DIR"
 echo ""
-echo "2. Verify required packages are installed:"
+echo ""
+echo "2. After configuring DOCKER_COMPOSE_DIR, regenerate compose.yml:"
+echo "   sudo ./install.sh --generate-compose"
+echo "   (or if install.sh is no longer available:"
+echo "    cd /tmp && curl -O <repo-url>/install.sh && sudo bash install.sh --generate-compose)"
+echo ""
+echo "3. Verify required packages are installed:"
 echo "   - cifs-utils: sudo apt install cifs-utils"
 echo "   - docker: sudo apt install docker.io docker-compose-plugin"
 echo ""

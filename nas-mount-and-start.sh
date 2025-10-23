@@ -114,6 +114,7 @@ start_docker_services() {
     # Check if compose.yml exists
     if [ ! -f "$DOCKER_COMPOSE_DIR/compose.yml" ] && [ ! -f "$DOCKER_COMPOSE_DIR/docker-compose.yml" ]; then
         log "ERROR: No compose.yml or docker-compose.yml found in $DOCKER_COMPOSE_DIR"
+        log "HINT: If you haven't generated compose.yml yet, run: sudo ./install.sh --generate-compose"
         return 1
     fi
     

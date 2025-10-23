@@ -21,8 +21,9 @@ Vibe-coded with Claude.
 - `nas-mount-and-start.sh` - Main script that handles mounting and Docker startup
 - `nas-mount-startup.service` - Systemd service file
 - `nas-mount-startup.env.example` - Environment configuration template
-- `install.sh` - Installation script
+- `install.sh` - Installation script (also generates compose.yml)
 - `uninstall.sh` - Uninstallation/teardown script
+- `compose.yml` - **Auto-generated** during installation (not in repo)
 
 ## Prerequisites
 
@@ -58,7 +59,7 @@ Vibe-coded with Claude.
    DOCKER_COMPOSE_DIR=/path/to/your/docker/compose
    ```
 
-   **Optional settings** (uncomment and modify if needed):
+   **Optional NAS settings** (uncomment and modify if needed):
    ```bash
    #NAS_IP=192.168.1.241
    #NAS_USERNAME=devin
@@ -67,12 +68,28 @@ Vibe-coded with Claude.
    #EXPECTED_FOLDERS=Movies,TV Shows,Music
    ```
 
-4. **Verify the configuration file permissions**:
+   **Optional Jellyfin settings** (uncomment and modify if needed):
+   ```bash
+   #JELLYFIN_IMAGE=jellyfin/jellyfin
+   #JELLYFIN_CONTAINER_NAME=jellyfin
+   #JELLYFIN_CONFIG_DIR=~/jellyfin_config
+   #JELLYFIN_CACHE_DIR=~/jellyfin_cache
+   #JELLYFIN_PORT=8096
+   #JELLYFIN_MEDIA_DIR=/mnt/synology_nas/media
+   ```
+
+4. **Generate the compose.yml file** after configuring DOCKER_COMPOSE_DIR:
+   ```bash
+   sudo ./install.sh --generate-compose
+   ```
+   This creates a `compose.yml` file in your `DOCKER_COMPOSE_DIR` with Jellyfin configuration based on your environment variables.
+
+5. **Verify the configuration file permissions**:
    ```bash
    sudo chmod 600 /etc/nas-mount-startup.env
    ```
 
-5. **Start the service**:
+6. **Start the service**:
    ```bash
    sudo systemctl start nas-mount-startup
    ```
@@ -83,27 +100,69 @@ All configuration is managed through `/etc/nas-mount-startup.env`. This file is 
 
 ### Environment Variables
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `NAS_PASSWORD` | **YES** | *(none)* | Password for NAS CIFS mount |
-| `DOCKER_COMPOSE_DIR` | **YES** | `/path/to/your/docker/compose` | Path to directory with compose.yml |
-| `NAS_IP` | No | `192.168.1.241` | IP address of your NAS |
-| `NAS_USERNAME` | No | `devin` | Username for NAS authentication |
-| `NAS_SHARE` | No | `Media` | Name of the NAS share to mount |
-| `MOUNT_POINT` | No | `/mnt/synology_nas/media` | Local mount point path |
-| `EXPECTED_FOLDERS` | No | `Movies,TV Shows,Music` | Comma-separated folders to verify |
-| `LOG_FILE` | No | `/var/log/nas-mount-startup.log` | Log file location |
+#### Required Variables
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NAS_PASSWORD` | *(none)* | Password for NAS CIFS mount |
+| `DOCKER_COMPOSE_DIR` | `/path/to/your/docker/compose` | Path where compose.yml will be generated |
+
+#### Optional NAS Variables
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NAS_IP` | `192.168.1.241` | IP address of your NAS |
+| `NAS_USERNAME` | `devin` | Username for NAS authentication |
+| `NAS_SHARE` | `Media` | Name of the NAS share to mount |
+| `MOUNT_POINT` | `/mnt/synology_nas/media` | Local mount point path |
+| `EXPECTED_FOLDERS` | `Movies,TV Shows,Music` | Comma-separated folders to verify |
+| `LOG_FILE` | `/var/log/nas-mount-startup.log` | Log file location |
+
+#### Optional Jellyfin Variables
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JELLYFIN_IMAGE` | `jellyfin/jellyfin` | Docker image for Jellyfin |
+| `JELLYFIN_CONTAINER_NAME` | `jellyfin` | Name for the Jellyfin container |
+| `JELLYFIN_CONFIG_DIR` | `~/jellyfin_config` | Directory for Jellyfin configuration |
+| `JELLYFIN_CACHE_DIR` | `~/jellyfin_cache` | Directory for Jellyfin cache |
+| `JELLYFIN_PORT` | `8096` | HTTP port for Jellyfin (host networking) |
+| `JELLYFIN_MEDIA_DIR` | `${MOUNT_POINT}` | Path to media files from NAS |
 
 ### Updating Configuration
 
 After modifying `/etc/nas-mount-startup.env`:
 
 ```bash
+# If you changed any Jellyfin settings, regenerate compose.yml
+sudo ./install.sh --generate-compose
+
 # Reload the systemd service configuration
 sudo systemctl daemon-reload
 
 # Restart the service to apply changes
 sudo systemctl restart nas-mount-startup
+```
+
+### Auto-Generated compose.yml
+
+The `compose.yml` file is **automatically generated** by the installer based on your environment variables. This means:
+
+- **Do not edit compose.yml directly** - your changes will be overwritten
+- **Edit `/etc/nas-mount-startup.env` instead** - then regenerate with `sudo ./install.sh --generate-compose`
+- The file is **not tracked in git** - it's created fresh on each system based on local configuration
+- **Location**: Generated in `$DOCKER_COMPOSE_DIR/compose.yml`
+
+Example generated compose.yml:
+```yaml
+services:
+  jellyfin:
+    image: jellyfin/jellyfin
+    container_name: jellyfin
+    network_mode: 'host' # Port 8096
+    volumes:
+      - /home/user/jellyfin_config:/config
+      - /home/user/jellyfin_cache:/cache
+      - type: bind
+        source: /mnt/synology_nas/media
+        target: /media
 ```
 
 ## Usage
@@ -247,10 +306,16 @@ This workflow is particularly useful when testing configuration changes or debug
 
 4. **"DOCKER_COMPOSE_DIR has not been configured"**
    - Set `DOCKER_COMPOSE_DIR` in `/etc/nas-mount-startup.env`
-   - Ensure the path contains `compose.yml` or `docker-compose.yml`
+   - Generate compose.yml: `sudo ./install.sh --generate-compose`
 
-5. **"Failed to start Docker Compose services"**
+5. **"No compose.yml or docker-compose.yml found"**
+   - Generate the compose.yml file: `sudo ./install.sh --generate-compose`
+   - Verify DOCKER_COMPOSE_DIR is set correctly in `/etc/nas-mount-startup.env`
+   - Check that the directory exists: `ls -la $DOCKER_COMPOSE_DIR`
+
+6. **"Failed to start Docker Compose services"**
    - Check if Docker is running: `sudo systemctl status docker`
+   - Verify compose.yml is valid: `cd $DOCKER_COMPOSE_DIR && docker compose config`
    - Test Docker Compose manually: `cd /your/docker/dir && sudo docker compose up -d`
 
 ### Debug Mode
@@ -283,6 +348,34 @@ sudo systemctl stop nas-mount-startup
 
 ## Customization
 
+### Customizing Jellyfin Configuration
+
+All Jellyfin settings are controlled via environment variables in `/etc/nas-mount-startup.env`:
+
+```bash
+# Use a specific Jellyfin version
+JELLYFIN_IMAGE=jellyfin/jellyfin:10.8.13
+
+# Change container name
+JELLYFIN_CONTAINER_NAME=my-jellyfin
+
+# Use different directories
+JELLYFIN_CONFIG_DIR=/opt/jellyfin/config
+JELLYFIN_CACHE_DIR=/opt/jellyfin/cache
+
+# Change port (requires regenerating compose.yml)
+JELLYFIN_PORT=8097
+
+# Point to different media location
+JELLYFIN_MEDIA_DIR=/mnt/other-nas/movies
+```
+
+After changing any settings, regenerate compose.yml:
+```bash
+sudo ./install.sh --generate-compose
+sudo systemctl restart nas-mount-startup
+```
+
 ### Adding More Verification
 
 You can add more verification steps in the `verify_mount()` function:
@@ -292,18 +385,6 @@ You can add more verification steps in the `verify_mount()` function:
 if [ ! -f "$MOUNT_POINT/Movies/test-file.txt" ]; then
     log "WARNING: Test file not found"
 fi
-```
-
-### Different Docker Compose Commands
-
-Modify the `start_docker_services()` function for different Docker commands:
-
-```bash
-# Example: Use specific compose file
-docker compose -f jellyfin-compose.yml up -d
-
-# Example: Start only specific services
-docker compose up -d jellyfin
 ```
 
 ### Using Credentials File (Alternative to Environment Variables)

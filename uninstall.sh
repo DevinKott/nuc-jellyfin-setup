@@ -12,6 +12,16 @@ ENV_PATH="/etc/nas-mount-startup.env"
 LOG_FILE="/var/log/nas-mount-startup.log"
 MOUNT_POINT="/mnt/synology_nas/media"
 
+# Function to expand ~ to actual home directory
+expand_home() {
+    local path="$1"
+    if [[ "$path" == "~/"* ]]; then
+        echo "$HOME/${path#~/}"
+    else
+        echo "$path"
+    fi
+}
+
 echo "========================================"
 echo "NAS Mount Service Uninstaller"
 echo "========================================"
@@ -21,6 +31,14 @@ echo ""
 if [ "$EUID" -ne 0 ]; then
     echo "ERROR: This script must be run as root (use sudo)"
     exit 1
+fi
+
+# Load environment variables early so we can use them later
+JELLYFIN_CONFIG_DIR=""
+JELLYFIN_CACHE_DIR=""
+DOCKER_COMPOSE_DIR=""
+if [ -f "$ENV_PATH" ]; then
+    source "$ENV_PATH"
 fi
 
 # Stop the service if it's running
@@ -39,6 +57,22 @@ if systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
     echo "  ✓ Service disabled"
 else
     echo "  ℹ Service is not enabled"
+fi
+
+# Stop Docker containers if they're running
+if [ -f "$ENV_PATH" ]; then
+    source "$ENV_PATH"
+    if [ -n "$DOCKER_COMPOSE_DIR" ] && [ -d "$DOCKER_COMPOSE_DIR" ]; then
+        if [ -f "$DOCKER_COMPOSE_DIR/compose.yml" ] || [ -f "$DOCKER_COMPOSE_DIR/docker-compose.yml" ]; then
+            echo "Stopping Docker containers..."
+            cd "$DOCKER_COMPOSE_DIR"
+            if docker compose down 2>/dev/null; then
+                echo "  ✓ Docker containers stopped"
+            else
+                echo "  ⚠ WARNING: Failed to stop Docker containers (may already be stopped)"
+            fi
+        fi
+    fi
 fi
 
 # Unmount NAS if mounted
@@ -70,6 +104,16 @@ if [ -f "$SCRIPT_PATH" ]; then
     echo "  ✓ Script removed"
 else
     echo "  ℹ Script not found (already removed)"
+fi
+
+# Remove compose.yml if it exists
+if [ -f "$ENV_PATH" ]; then
+    source "$ENV_PATH"
+    if [ -n "$DOCKER_COMPOSE_DIR" ] && [ -f "$DOCKER_COMPOSE_DIR/compose.yml" ]; then
+        echo "Removing generated compose.yml: $DOCKER_COMPOSE_DIR/compose.yml"
+        rm -f "$DOCKER_COMPOSE_DIR/compose.yml"
+        echo "  ✓ compose.yml removed"
+    fi
 fi
 
 # Remove environment file
@@ -111,7 +155,19 @@ echo "Optional cleanup:"
 echo "  • Mount point directory still exists: $MOUNT_POINT"
 echo "    To remove: sudo rmdir $MOUNT_POINT"
 echo ""
-echo "  • If Docker containers were started by this service, they may still be running."
-echo "    To stop them, run: docker compose down"
-echo "    (in your Docker Compose directory)"
-echo ""
+
+# Show Jellyfin directories if they exist
+JELLYFIN_CONFIG_DIR_EXPANDED=$(expand_home "${JELLYFIN_CONFIG_DIR:-~/jellyfin_config}")
+JELLYFIN_CACHE_DIR_EXPANDED=$(expand_home "${JELLYFIN_CACHE_DIR:-~/jellyfin_cache}")
+
+if [ -d "$JELLYFIN_CONFIG_DIR_EXPANDED" ]; then
+    echo "  • Jellyfin config directory still exists: $JELLYFIN_CONFIG_DIR_EXPANDED"
+    echo "    To remove: sudo rm -rf $JELLYFIN_CONFIG_DIR_EXPANDED"
+    echo ""
+fi
+
+if [ -d "$JELLYFIN_CACHE_DIR_EXPANDED" ]; then
+    echo "  • Jellyfin cache directory still exists: $JELLYFIN_CACHE_DIR_EXPANDED"
+    echo "    To remove: sudo rm -rf $JELLYFIN_CACHE_DIR_EXPANDED"
+    echo ""
+fi

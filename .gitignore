@@ -1,0 +1,9 @@
+# Generated compose.yml file (created by install.sh)
+compose.yml
+
+# Environment configuration (contains secrets)
+/etc/nas-mount-startup.env
+
+# Local Jellyfin directories
+jellyfin_config/
+jellyfin_cache/
