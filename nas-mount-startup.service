@@ -1,0 +1,28 @@
+[Unit]
+Description=Mount NAS and Start Docker Services
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/nas-mount-and-start.sh
+User=root
+StandardOutput=journal
+StandardError=journal
+
+# Restart policy
+Restart=on-failure
+RestartSec=30
+
+# Environment
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Load environment variables from file (including NAS_PASSWORD)
+# Create /etc/nas-mount-startup.env with your configuration
+# The '-' prefix means the service won't fail if the file doesn't exist
+EnvironmentFile=-/etc/nas-mount-startup.env
+
+[Install]
+WantedBy=multi-user.target
