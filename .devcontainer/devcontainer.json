@@ -1,0 +1,4 @@
+{
+	"name": "NodeJS Environment",
+	"image": "mcr.microsoft.com/vscode/devcontainers/javascript-node"
+}
