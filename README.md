@@ -78,11 +78,22 @@ Vibe-coded with Claude.
    #JELLYFIN_MEDIA_DIR=/mnt/synology_nas/media
    ```
 
+   **Optional TinyMediaManager settings** (uncomment and modify if needed):
+   ```bash
+   #TMM_IMAGE=tinymediamanager/tinymediamanager:latest
+   #TMM_CONTAINER_NAME=tmm
+   #TMM_DATA_DIR=~/tmm-data
+   #TMM_PORT=4000
+   #TMM_TZ=America/Denver
+   #TMM_TVSHOWS_DIR=/mnt/synology_nas/media/TV Shows
+   #TMM_MOVIES_DIR=/mnt/synology_nas/media/Movies
+   ```
+
 4. **Generate the compose.yml file** after configuring DOCKER_COMPOSE_DIR:
    ```bash
    sudo ./install.sh --generate-compose
    ```
-   This creates a `compose.yml` file in your `DOCKER_COMPOSE_DIR` with Jellyfin configuration based on your environment variables.
+   This creates a `compose.yml` file in your `DOCKER_COMPOSE_DIR` with Jellyfin and TinyMediaManager configuration based on your environment variables.
 
 5. **Verify the configuration file permissions**:
    ```bash
@@ -126,12 +137,23 @@ All configuration is managed through `/etc/nas-mount-startup.env`. This file is 
 | `JELLYFIN_PORT` | `8096` | HTTP port for Jellyfin (host networking) |
 | `JELLYFIN_MEDIA_DIR` | `${MOUNT_POINT}` | Path to media files from NAS |
 
+#### Optional TinyMediaManager Variables
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TMM_IMAGE` | `tinymediamanager/tinymediamanager:latest` | Docker image for TinyMediaManager |
+| `TMM_CONTAINER_NAME` | `tmm` | Name for the TinyMediaManager container |
+| `TMM_DATA_DIR` | `~/tmm-data` | Directory for TinyMediaManager data/config |
+| `TMM_PORT` | `4000` | HTTP port for TinyMediaManager web interface |
+| `TMM_TZ` | `America/Denver` | Timezone for TinyMediaManager |
+| `TMM_TVSHOWS_DIR` | `${MOUNT_POINT}/TV Shows` | Path to TV shows from NAS |
+| `TMM_MOVIES_DIR` | `${MOUNT_POINT}/Movies` | Path to movies from NAS |
+
 ### Updating Configuration
 
 After modifying `/etc/nas-mount-startup.env`:
 
 ```bash
-# If you changed any Jellyfin settings, regenerate compose.yml
+# If you changed any Jellyfin or TinyMediaManager settings, regenerate compose.yml
 sudo ./install.sh --generate-compose
 
 # Reload the systemd service configuration
@@ -163,6 +185,24 @@ services:
       - type: bind
         source: /mnt/synology_nas/media
         target: /media
+    devices:
+      - /dev/dri:/dev/dri
+
+  tinymediamanager:
+    image: tinymediamanager/tinymediamanager:latest
+    container_name: tmm
+    ports:
+      - "4000:4000"
+    environment:
+      - TZ=America/Denver
+      - USER_ID=1000
+      - GROUP_ID=1000
+      - LC_ALL=en_US.UTF-8
+      - LANG=en_US.UTF-8
+    volumes:
+      - /home/user/tmm-data:/data
+      - /mnt/synology_nas/media/TV Shows:/media/tvshows
+      - /mnt/synology_nas/media/Movies:/media/movies
 ```
 
 ## Usage
@@ -368,6 +408,37 @@ JELLYFIN_PORT=8097
 
 # Point to different media location
 JELLYFIN_MEDIA_DIR=/mnt/other-nas/movies
+```
+
+After changing any settings, regenerate compose.yml:
+```bash
+sudo ./install.sh --generate-compose
+sudo systemctl restart nas-mount-startup
+```
+
+### Customizing TinyMediaManager Configuration
+
+All TinyMediaManager settings are controlled via environment variables in `/etc/nas-mount-startup.env`:
+
+```bash
+# Use a specific TinyMediaManager version
+TMM_IMAGE=tinymediamanager/tinymediamanager:4.3
+
+# Change container name
+TMM_CONTAINER_NAME=my-tmm
+
+# Use different data directory
+TMM_DATA_DIR=/opt/tmm/data
+
+# Change port
+TMM_PORT=4001
+
+# Change timezone
+TMM_TZ=Europe/London
+
+# Point to different media locations
+TMM_TVSHOWS_DIR=/mnt/nas/series
+TMM_MOVIES_DIR=/mnt/nas/films
 ```
 
 After changing any settings, regenerate compose.yml:

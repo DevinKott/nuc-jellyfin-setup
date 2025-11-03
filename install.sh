@@ -43,6 +43,21 @@ generate_compose_file() {
     local jellyfin_port="${JELLYFIN_PORT:-8096}"
     local jellyfin_media="${JELLYFIN_MEDIA_DIR:-${MOUNT_POINT:-/mnt/synology_nas/media}}"
 
+    # Set defaults for TinyMediaManager configuration
+    local tmm_image="${TMM_IMAGE:-tinymediamanager/tinymediamanager:latest}"
+    local tmm_container="${TMM_CONTAINER_NAME:-tmm}"
+    local tmm_data=$(expand_home "${TMM_DATA_DIR:-~/tmm-data}")
+    local tmm_port="${TMM_PORT:-4000}"
+    local tmm_tz="${TMM_TZ:-America/Denver}"
+    local mount_point="${MOUNT_POINT:-/mnt/synology_nas/media}"
+    local tmm_tvshows="${TMM_TVSHOWS_DIR:-$mount_point/TV Shows}"
+    local tmm_movies="${TMM_MOVIES_DIR:-$mount_point/Movies}"
+
+    # Get user ID and group ID for TinyMediaManager
+    local real_user="${SUDO_USER:-$USER}"
+    local user_id=$(id -u "$real_user")
+    local group_id=$(id -g "$real_user")
+
     echo "Generating compose.yml at $compose_file..."
 
     # Create the compose directory if it doesn't exist
@@ -63,15 +78,44 @@ services:
         target: /media
     devices:
       - /dev/dri:/dev/dri
+
+  tinymediamanager:
+    image: $tmm_image
+    container_name: $tmm_container
+    ports:
+      - "$tmm_port:4000"
+    environment:
+      - TZ=$tmm_tz
+      - USER_ID=$user_id
+      - GROUP_ID=$group_id
+      - LC_ALL=en_US.UTF-8
+      - LANG=en_US.UTF-8
+    volumes:
+      - $tmm_data:/data
+      - $tmm_tvshows:/media/tvshows
+      - $tmm_movies:/media/movies
 EOF
 
-    echo "  ✓ Generated compose.yml with Jellyfin configuration"
-    echo "    Image: $jellyfin_image"
-    echo "    Container: $jellyfin_container"
-    echo "    Config: $jellyfin_config"
-    echo "    Cache: $jellyfin_cache"
-    echo "    Media: $jellyfin_media"
-    echo "    Port: $jellyfin_port"
+    echo "  ✓ Generated compose.yml with Jellyfin and TinyMediaManager configuration"
+    echo ""
+    echo "    Jellyfin:"
+    echo "      Image: $jellyfin_image"
+    echo "      Container: $jellyfin_container"
+    echo "      Config: $jellyfin_config"
+    echo "      Cache: $jellyfin_cache"
+    echo "      Media: $jellyfin_media"
+    echo "      Port: $jellyfin_port"
+    echo ""
+    echo "    TinyMediaManager:"
+    echo "      Image: $tmm_image"
+    echo "      Container: $tmm_container"
+    echo "      Data: $tmm_data"
+    echo "      TV Shows: $tmm_tvshows"
+    echo "      Movies: $tmm_movies"
+    echo "      Port: $tmm_port"
+    echo "      Timezone: $tmm_tz"
+    echo "      User ID: $user_id"
+    echo "      Group ID: $group_id"
 }
 
 # Function to create Jellyfin directories
@@ -107,6 +151,29 @@ create_jellyfin_directories() {
         echo "  ✓ Created cache directory: $jellyfin_cache"
     else
         echo "  ℹ Cache directory already exists: $jellyfin_cache"
+    fi
+}
+
+# Function to create TinyMediaManager directories
+create_tmm_directories() {
+    if [ -f "$ENV_PATH" ]; then
+        source "$ENV_PATH"
+    fi
+
+    local tmm_data=$(expand_home "${TMM_DATA_DIR:-~/tmm-data}")
+
+    echo "Creating TinyMediaManager directories..."
+
+    # Create data directory
+    if [ ! -d "$tmm_data" ]; then
+        mkdir -p "$tmm_data"
+        # Set ownership to the user who ran sudo (if applicable)
+        if [ -n "$SUDO_USER" ]; then
+            chown -R "$SUDO_USER:$SUDO_USER" "$tmm_data"
+        fi
+        echo "  ✓ Created data directory: $tmm_data"
+    else
+        echo "  ℹ Data directory already exists: $tmm_data"
     fi
 }
 
@@ -167,6 +234,9 @@ chmod 644 /var/log/nas-mount-startup.log
 # Create Jellyfin directories
 create_jellyfin_directories
 
+# Create TinyMediaManager directories
+create_tmm_directories
+
 # Generate compose.yml if DOCKER_COMPOSE_DIR is set in env file
 if [ -f "$ENV_PATH" ]; then
     source "$ENV_PATH"
@@ -204,6 +274,8 @@ echo "   - NAS_IP, NAS_USERNAME, NAS_SHARE"
 echo "   - EXPECTED_FOLDERS, MOUNT_POINT, LOG_FILE"
 echo "   - JELLYFIN_IMAGE, JELLYFIN_CONTAINER_NAME, JELLYFIN_CONFIG_DIR"
 echo "   - JELLYFIN_CACHE_DIR, JELLYFIN_PORT, JELLYFIN_MEDIA_DIR"
+echo "   - TMM_IMAGE, TMM_CONTAINER_NAME, TMM_DATA_DIR, TMM_PORT"
+echo "   - TMM_TZ, TMM_TVSHOWS_DIR, TMM_MOVIES_DIR"
 echo ""
 echo ""
 echo "2. After configuring DOCKER_COMPOSE_DIR, regenerate compose.yml:"

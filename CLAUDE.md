@@ -8,7 +8,7 @@ code in this repository.
 This is a systemd service setup for automatically mounting a Synology NAS via
 CIFS and starting Docker Compose services on boot. The system is designed to run
 on an Intel NUC running Linux, specifically for managing a Jellyfin media server
-setup.
+and TinyMediaManager setup.
 
 ## Architecture
 
@@ -29,7 +29,7 @@ The system consists of five main components:
    - Configured with automatic restart on failure (30 second delay)
 
 3. **nas-mount-startup.env.example** - Environment configuration template that:
-   - Provides example configuration for all variables (NAS, Docker, and Jellyfin)
+   - Provides example configuration for all variables (NAS, Docker, Jellyfin, and TinyMediaManager)
    - Documents required vs optional settings
    - Gets copied to /etc/nas-mount-startup.env during installation
 
@@ -38,6 +38,7 @@ The system consists of five main components:
    - Copies service file to /etc/systemd/system/nas-mount-startup.service
    - Creates /etc/nas-mount-startup.env from template with secure permissions (600)
    - Creates Jellyfin config and cache directories (~/jellyfin_config, ~/jellyfin_cache)
+   - Creates TinyMediaManager data directory (~/tmm-data)
    - **Dynamically generates compose.yml** from environment variables
    - Creates log file at /var/log/nas-mount-startup.log
    - Enables but doesn't start the service (requires configuration first)
@@ -48,7 +49,7 @@ The system consists of five main components:
    - Stops Docker containers via docker compose down
    - Unmounts the NAS
    - Removes all installed files (script, service, env, logs, compose.yml)
-   - Lists optional cleanup for Jellyfin directories and mount point
+   - Lists optional cleanup for Jellyfin and TinyMediaManager directories and mount point
 
 ## Key Configuration Variables
 
@@ -73,6 +74,15 @@ All configuration is managed via environment variables in `/etc/nas-mount-startu
 - `JELLYFIN_CACHE_DIR` - Directory for Jellyfin cache (default: ~/jellyfin_cache)
 - `JELLYFIN_PORT` - HTTP port for Jellyfin (default: 8096, uses host networking)
 - `JELLYFIN_MEDIA_DIR` - Path to media files from NAS (default: uses MOUNT_POINT value)
+
+**Optional TinyMediaManager Variables (with defaults):**
+- `TMM_IMAGE` - Docker image for TinyMediaManager (default: tinymediamanager/tinymediamanager:latest)
+- `TMM_CONTAINER_NAME` - Name for the TinyMediaManager container (default: tmm)
+- `TMM_DATA_DIR` - Directory for TinyMediaManager data/config (default: ~/tmm-data)
+- `TMM_PORT` - HTTP port for TinyMediaManager web interface (default: 4000)
+- `TMM_TZ` - Timezone for TinyMediaManager (default: America/Denver)
+- `TMM_TVSHOWS_DIR` - Path to TV shows from NAS (default: ${MOUNT_POINT}/TV Shows)
+- `TMM_MOVIES_DIR` - Path to movies from NAS (default: ${MOUNT_POINT}/Movies)
 
 ## Development and Testing
 
@@ -102,7 +112,7 @@ sudo ./install.sh
 # Configure the environment file (REQUIRED)
 sudo nano /etc/nas-mount-startup.env
 # Set NAS_PASSWORD and DOCKER_COMPOSE_DIR at minimum
-# Optionally customize Jellyfin settings
+# Optionally customize Jellyfin and TinyMediaManager settings
 
 # Generate compose.yml from environment variables
 sudo ./install.sh --generate-compose
@@ -149,11 +159,13 @@ sudo docker compose up -d
    - Allows each installation to be customized via environment variables
    - Prevents hardcoded paths or credentials from being committed to git
    - Enables easy reconfiguration via `sudo ./install.sh --generate-compose`
-   - Creates Jellyfin container configuration with user-specified directories and settings
+   - Creates Jellyfin and TinyMediaManager container configurations with user-specified directories and settings
+   - Automatically handles spaces in directory names (e.g., "TV Shows")
 
 2. **Directory Auto-Creation**: During installation, the script automatically creates:
    - Jellyfin config directory (default: ~/jellyfin_config) with proper ownership
    - Jellyfin cache directory (default: ~/jellyfin_cache) with proper ownership
+   - TinyMediaManager data directory (default: ~/tmm-data) with proper ownership
    - Docker Compose directory if it doesn't exist
    - Directories are owned by $SUDO_USER to avoid permission issues
 
