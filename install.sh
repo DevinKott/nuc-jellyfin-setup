@@ -15,8 +15,11 @@ ENV_PATH="/etc/nas-mount-startup.env"
 # Function to expand ~ to actual home directory
 expand_home() {
     local path="$1"
-    if [[ "$path" == "~/"* ]]; then
-        echo "$HOME/${path#~/}"
+    if [[ "$path" == "~/"* ]] || [[ "$path" == "~" ]]; then
+        # Get the actual user's home directory (not root's)
+        local real_user="${SUDO_USER:-$USER}"
+        local real_home=$(getent passwd "$real_user" | cut -d: -f6)
+        echo "${real_home}${path#\~}"
     else
         echo "$path"
     fi
@@ -58,6 +61,8 @@ services:
       - type: bind
         source: $jellyfin_media
         target: /media
+    devices:
+      - /dev/dri:/dev/dri
 EOF
 
     echo "  ✓ Generated compose.yml with Jellyfin configuration"
